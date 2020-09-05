@@ -1,0 +1,201 @@
+From 919234b3aa05dee46f3552a3f4c12a931098243e Mon Sep 17 00:00:00 2001
+From: Hariharan <haran465@gmail.com>
+Date: Sat, 5 Sep 2020 12:47:02 +0530
+Subject: [PATCH] Patch File for final submission
+
+---
+ src/DataManipulator.ts |  46 +++++++++++-----
+ src/Graph.tsx          | 116 +++++++++++++++++++++++------------------
+ 2 files changed, 98 insertions(+), 64 deletions(-)
+
+diff --git a/src/DataManipulator.ts b/src/DataManipulator.ts
+index f6b15ff..788f755 100644
+--- a/src/DataManipulator.ts
++++ b/src/DataManipulator.ts
+@@ -1,20 +1,38 @@
+-import { ServerRespond } from './DataStreamer';
++import { ServerRespond } from "./DataStreamer";
+ 
+ export interface Row {
+-  stock: string,
+-  top_ask_price: number,
+-  timestamp: Date,
++	price_abc: number;
++	price_def: number;
++	ratio: number;
++	trigger_alert: number | undefined;
++	upper_bound: number;
++	lower_bound: number;
++	timestamp: Date;
+ }
+ 
+-
+ export class DataManipulator {
+-  static generateRow(serverResponds: ServerRespond[]): Row[] {
+-    return serverResponds.map((el: any) => {
+-      return {
+-        stock: el.stock,
+-        top_ask_price: el.top_ask && el.top_ask.price || 0,
+-        timestamp: el.timestamp,
+-      };
+-    })
+-  }
++	static generateRow(serverResponds: ServerRespond[]): Row {
++		const priceABC =
++			(serverResponds[0].top_ask.price + serverResponds[0].top_bid.price) / 2;
++		const priceDEF =
++			(serverResponds[1].top_ask.price + serverResponds[1].top_bid.price) / 2;
++		const ratio = priceABC / priceDEF;
++		const upperBound = 1 + 0.02;
++		const lowerBound = 1 - 0.011;
++		return {
++			// assigning values to new variables
++			price_abc: priceABC,
++			price_def: priceDEF,
++			ratio,
++			timestamp:
++				serverResponds[0].timestamp > serverResponds[1].timestamp
++					? serverResponds[0].timestamp
++					: serverResponds[1].timestamp,
++			upper_bound: upperBound,
++			lower_bound: lowerBound,
++			trigger_alert:
++				ratio > upperBound || ratio < lowerBound ? ratio : undefined,
++		};
++		//})
++	}
+ }
+diff --git a/src/Graph.tsx b/src/Graph.tsx
+index 58fb997..40be710 100644
+--- a/src/Graph.tsx
++++ b/src/Graph.tsx
+@@ -1,60 +1,76 @@
+-import React, { Component } from 'react';
+-import { Table } from '@jpmorganchase/perspective';
+-import { ServerRespond } from './DataStreamer';
+-import { DataManipulator } from './DataManipulator';
+-import './Graph.css';
++import React, { Component } from "react";
++import { Table } from "@jpmorganchase/perspective";
++import { ServerRespond } from "./DataStreamer";
++import { DataManipulator } from "./DataManipulator";
++import "./Graph.css";
+ 
+ interface IProps {
+-  data: ServerRespond[],
++	data: ServerRespond[];
+ }
+ 
+ interface PerspectiveViewerElement extends HTMLElement {
+-  load: (table: Table) => void,
++	load: (table: Table) => void;
+ }
+ class Graph extends Component<IProps, {}> {
+-  table: Table | undefined;
+-
+-  render() {
+-    return React.createElement('perspective-viewer');
+-  }
+-
+-  componentDidMount() {
+-    // Get element from the DOM.
+-    const elem = document.getElementsByTagName('perspective-viewer')[0] as unknown as PerspectiveViewerElement;
+-
+-    const schema = {
+-      stock: 'string',
+-      top_ask_price: 'float',
+-      top_bid_price: 'float',
+-      timestamp: 'date',
+-    };
+-
+-    if (window.perspective && window.perspective.worker()) {
+-      this.table = window.perspective.worker().table(schema);
+-    }
+-    if (this.table) {
+-      // Load the `table` in the `<perspective-viewer>` DOM reference.
+-      elem.load(this.table);
+-      elem.setAttribute('view', 'y_line');
+-      elem.setAttribute('column-pivots', '["stock"]');
+-      elem.setAttribute('row-pivots', '["timestamp"]');
+-      elem.setAttribute('columns', '["top_ask_price"]');
+-      elem.setAttribute('aggregates', JSON.stringify({
+-        stock: 'distinctcount',
+-        top_ask_price: 'avg',
+-        top_bid_price: 'avg',
+-        timestamp: 'distinct count',
+-      }));
+-    }
+-  }
+-
+-  componentDidUpdate() {
+-    if (this.table) {
+-      this.table.update(
+-        DataManipulator.generateRow(this.props.data),
+-      );
+-    }
+-  }
++	table: Table | undefined;
++
++	render() {
++		return React.createElement("perspective-viewer");
++	}
++
++	componentDidMount() {
++		// Get element from the DOM.
++		const elem = (document.getElementsByTagName(
++			"perspective-viewer"
++		)[0] as unknown) as PerspectiveViewerElement;
++
++		const schema = {
++			//we made changes as we just want to show ratio and bounds
++			//price_abc and price_def will be needed to find the ratio
++			price_abc: "float",
++			price_def: "float",
++			ratio: "float",
++			trigger_alert: "float",
++			upper_bound: "float",
++			lower_bound: "float",
++			timestamp: "date",
++		};
++
++		if (window.perspective && window.perspective.worker()) {
++			this.table = window.perspective.worker().table(schema);
++		}
++		if (this.table) {
++			// Load the `table` in the `<perspective-viewer>` DOM reference.
++			elem.load(this.table);
++			elem.setAttribute("view", "y_line");
++			// column-pivots not here as we are concerned about ratio btw ABC and DEF and not their separate prices
++			elem.setAttribute("row-pivots", '["timestamp"]'); //for the x axis
++			elem.setAttribute(
++				"columns",
++				'["ratio" ,"lower_bound","upper_bound","trigger_alert"]'
++			);
++			// attributes must be updated
++			// handles duplicate data
++			elem.setAttribute(
++				"aggregates",
++				JSON.stringify({
++					price_abc: "avg",
++					price_def: "avg",
++					ratio: "avg",
++					trigger_alert: "avg",
++					upper_bound: "avg",
++					lower_bound: "avg",
++					timestamp: "distinct count",
++				})
++			);
++		}
++	}
++
++	componentDidUpdate() {
++		if (this.table) {
++			this.table.update([DataManipulator.generateRow(this.props.data)]);
++		}
++	}
+ }
+ 
+ export default Graph;
+-- 
+2.28.0.windows.1
+
